@@ -9,13 +9,31 @@ def calculate_angle(a, b, c):
     b = np.array(b)  # 중간 점 (관절)
     c = np.array(c)  # 세 번째 점
 
-    radians = np.arctan2(c[1]-b[1], c[0]-b[0]) - np.arctan2(a[1]-b[1], a[0]-b[0])
-    angle = np.abs(radians*180.0/np.pi)
+    # 각 축에 대한 벡터 계산
+    ba = a - b  # b에서 a로의 벡터
+    bc = c - b  # b에서 c로의 벡터
 
-    if angle > 180.0:
-        angle = 360 - angle
+    # 각 축에 대한 각도 계산
+    angle_x = np.arctan2(np.linalg.norm(np.cross(ba[[1,2]], bc[[1,2]])), np.dot(ba[[1,2]], bc[[1,2]]))
+    angle_y = np.arctan2(np.linalg.norm(np.cross(ba[[0,2]], bc[[0,2]])), np.dot(ba[[0,2]], bc[[0,2]]))
+    angle_z = np.arctan2(np.linalg.norm(np.cross(ba[[0,1]], bc[[0,1]])), np.dot(ba[[0,1]], bc[[0,1]]))
 
-    return round(angle, 4)  # 소수점 네 자리까지 반올림하여 반환
+    # 라디안을 도(degree)로 변환
+    angle_x = angle_x*180.0/np.pi
+    angle_y = angle_y*180.0/np.pi
+    angle_z = angle_z*180.0/np.pi
+
+    angle_x = 180.0 if angle_x == 0.0 else angle_x
+    angle_y = 180.0 if angle_y == 0.0 else angle_y
+    angle_z = 180.0 if angle_z == 0.0 else angle_z
+
+    # angle_x = angle_x + 360 if angle_x < 0 else angle_x
+    # angle_y = angle_y + 360 if angle_y < 0 else angle_y
+    # angle_z = angle_z + 360 if angle_z < 0 else angle_z
+
+    # 결과 반환
+    return (round(angle_x, 4), round(angle_y, 4), round(angle_z, 4))  # 각 축에 대해 소수점 네 자리까지 반올림
+
 
 
 # MediaPipe pose 모듈 초기화
@@ -51,7 +69,7 @@ joint_rename = {
 
 
 # 동영상 파일 열기
-cap = cv2.VideoCapture('2swonDance.mp4')
+cap = cv2.VideoCapture('wavesample.mp4')
 frame_data = []  # 프레임별 데이터 저장
 
 while cap.isOpened():
@@ -60,8 +78,6 @@ while cap.isOpened():
         break
     new_size = (400, 400)
     image_resized = cv2.resize(image, new_size)
-
-    # BGR에서 RGB로 변환
     image_rgb = cv2.cvtColor(image_resized, cv2.COLOR_BGR2RGB)
     results = pose.process(image_rgb)
 
@@ -70,19 +86,35 @@ while cap.isOpened():
         for joint_name, joint_rename_value in joint_rename.items():
             idx = eval(f"mp_pose.PoseLandmark.{joint_name.upper()}.value")
             landmark = results.pose_landmarks.landmark[idx]
-            # 여기서는 이미지가 400x400으로 조정되었으므로, 좌표 조정은 필요 없음
-            frame_coordinates[joint_rename_value] = (landmark.x * new_size[0], landmark.y * new_size[1], landmark.z)
-        
-        # 추가된 Neck, Hips, Spine2 좌표 계산
-        frame_coordinates['Neck'] = tuple(np.mean([frame_coordinates['LeftShoulder'], frame_coordinates['RightShoulder']], axis=0))
-        frame_coordinates['Hips'] = tuple(np.mean([frame_coordinates['LeftUpLeg'], frame_coordinates['RightUpLeg']], axis=0))
+            frame_coordinates[joint_rename_value] = (round(landmark.x * new_size[0]), round(landmark.y * new_size[1]), 0)#z에 걍 0 넣어버리기#round(landmark.z, 4))
+            
+            # Display coordinates on the frame
+            cv2.putText(image_resized, f"{joint_rename_value}: {frame_coordinates[joint_rename_value]}", 
+                        (10, 20 + 20 * list(joint_rename.values()).index(joint_rename_value)), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+        # Additional coordinates calculations
+        frame_coordinates['Neck'] = tuple(np.round(np.mean([frame_coordinates['LeftShoulder'], frame_coordinates['RightShoulder']], axis=0),4))
+        frame_coordinates['Hips'] = tuple(np.round(np.mean([frame_coordinates['LeftUpLeg'], frame_coordinates['RightUpLeg']], axis=0),4))
         frame_coordinates['Spine'] = frame_coordinates['Hips']
-        frame_coordinates['Spine2'] = tuple(np.mean([frame_coordinates['LeftShoulder'], frame_coordinates['RightShoulder']], axis=0))
+        frame_coordinates['Spine2'] = tuple(np.round(np.mean([frame_coordinates['Neck'], frame_coordinates['Hips']], axis=0),4))
 
         frame_data.append(frame_coordinates)
 
+        mp_drawing.draw_landmarks(
+            image_resized, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
+            mp_drawing.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=2),
+            mp_drawing.DrawingSpec(color=(245,66,230), thickness=2, circle_radius=2)
+        )
+        
+    cv2.imshow('MediaPipe Pose', image_resized)
+    if cv2.waitKey(5) & 0xFF == 27:  # ESC to break
+        break
+
 pose.close()
 cap.release()
+cv2.destroyAllWindows()
+
 # DataFrame으로 변환
 df = pd.DataFrame(frame_data)
 
@@ -97,7 +129,7 @@ for frame in frame_data:
         'Neck': calculate_angle(frame['Head'], frame['Neck'], frame['Spine2']),
         'RightArm': calculate_angle(frame['RightHand'], frame['RightArm'], frame['RightShoulder']),
         'RightShoulder': calculate_angle(frame['RightArm'], frame['RightShoulder'], frame['Spine2']),
-        'LeftHand': calculate_angle(frame['LeftHand'], frame['LeftArm'], frame['LeftShoulder']),
+        'LeftArm': calculate_angle(frame['LeftHand'], frame['LeftArm'], frame['LeftShoulder']),
         'LeftShoulder': calculate_angle(frame['LeftArm'], frame['LeftShoulder'], frame['Spine2']),
         'RightLeg': calculate_angle(frame['RightFoot'], frame['RightLeg'], frame['RightUpLeg']),
         'LeftLeg': calculate_angle(frame['LeftFoot'], frame['LeftLeg'], frame['LeftUpLeg'])
@@ -138,13 +170,17 @@ with open('Animation/my.bvh', 'a', encoding='utf-8') as file:
         for joint in joints:
             if joint == 'Hips':
                 hips_coordinates = df['Hips'].iloc[frameNum]  # (x, y, z) 형태의 튜플
-                rounded_hips_coordinates = tuple(round(coord, 4) for coord in hips_coordinates)
+                # 여기서 y 좌표에만 90을 더합니다.
+                adjusted_hips_coordinates = (hips_coordinates[0], hips_coordinates[1], hips_coordinates[2])
+                rounded_hips_coordinates = tuple(round(coord, 4) for coord in adjusted_hips_coordinates)
                 frameAni += "{} {} {} ".format(*rounded_hips_coordinates)
             if joint in df_angles.columns:
-                frameAni += "0.0000 0.0000 " + str(df_angles[joint].iloc[frameNum]) + " "
+                joint_angles = df_angles[joint].iloc[frameNum]
+                joint_angles_xyz = (joint_angles[1], joint_angles[2], joint_angles[0]) # x,y,z => y, x, z 로 정정
+                frameAni += "{} {} {} ".format(*joint_angles_xyz)
             else:
                 # 일치하는 관절이 없는 경우 "0.0000 0.0000 0.0000"을 추가합니다.
                 frameAni += "0.0000 0.0000 0.0000 "
         
-        # 각 프레임의 데이터를 파일에 작성합니다. 마지막에 개행 문자를 추가하여 프레임을 구분합니다.
         file.write(frameAni.strip() + '\n')
+
