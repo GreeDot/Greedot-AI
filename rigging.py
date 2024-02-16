@@ -4,6 +4,37 @@ import yaml
 import numpy as np
 import pandas as pd
 
+# def calculate_angle(a, b, c):
+#     a = np.array(a)  # 첫 번째 점
+#     b = np.array(b)  # 중간 점 (관절)
+#     c = np.array(c)  # 세 번째 점
+
+#     # 각 축에 대한 벡터 계산
+#     ba = a - b  # b에서 a로의 벡터
+#     bc = c - b  # b에서 c로의 벡터
+
+#     # 각 축에 대한 각도 계산
+#     angle_x = np.arctan2(np.linalg.norm(np.cross(ba[[1,2]], bc[[1,2]])), np.dot(ba[[1,2]], bc[[1,2]]))
+#     angle_y = np.arctan2(np.linalg.norm(np.cross(ba[[0,2]], bc[[0,2]])), np.dot(ba[[0,2]], bc[[0,2]]))
+#     angle_z = np.arctan2(np.linalg.norm(np.cross(ba[[0,1]], bc[[0,1]])), np.dot(ba[[0,1]], bc[[0,1]]))
+
+#     # 라디안을 도(degree)로 변환
+#     angle_x = angle_x*180.0/np.pi
+#     angle_y = angle_y*180.0/np.pi
+#     angle_z = angle_z*180.0/np.pi
+
+#     angle_x = 180.0 if angle_x == 0.0 else angle_x
+#     angle_y = 180.0 if angle_y == 0.0 else angle_y
+#     angle_z = 180.0 if angle_z == 0.0 else angle_z
+
+#     # angle_x = angle_x + 360 if angle_x < 0 else angle_x
+#     # angle_y = angle_y + 360 if angle_y < 0 else angle_y
+#     # angle_z = angle_z + 360 if angle_z < 0 else angle_z
+
+#     # 결과 반환
+#     return (round(angle_x, 4), round(angle_y, 4), round(angle_z, 4))  # 각 축에 대해 소수점 네 자리까지 반올림
+
+
 def calculate_angle(a, b, c):
     a = np.array(a)  # 첫 번째 점
     b = np.array(b)  # 중간 점 (관절)
@@ -14,26 +45,16 @@ def calculate_angle(a, b, c):
     bc = c - b  # b에서 c로의 벡터
 
     # 각 축에 대한 각도 계산
-    angle_x = np.arctan2(np.linalg.norm(np.cross(ba[[1,2]], bc[[1,2]])), np.dot(ba[[1,2]], bc[[1,2]]))
-    angle_y = np.arctan2(np.linalg.norm(np.cross(ba[[0,2]], bc[[0,2]])), np.dot(ba[[0,2]], bc[[0,2]]))
-    angle_z = np.arctan2(np.linalg.norm(np.cross(ba[[0,1]], bc[[0,1]])), np.dot(ba[[0,1]], bc[[0,1]]))
+    cos_angle_x = np.dot(ba[[1, 2]], bc[[1, 2]]) / (np.linalg.norm(ba[[1, 2]]) * np.linalg.norm(bc[[1, 2]]))
+    cos_angle_y = np.dot(ba[[0, 2]], bc[[0, 2]]) / (np.linalg.norm(ba[[0, 2]]) * np.linalg.norm(bc[[0, 2]]))
+    cos_angle_z = np.dot(ba[[0, 1]], bc[[0, 1]]) / (np.linalg.norm(ba[[0, 1]]) * np.linalg.norm(bc[[0, 1]]))
 
-    # 라디안을 도(degree)로 변환
-    angle_x = angle_x*180.0/np.pi
-    angle_y = angle_y*180.0/np.pi
-    angle_z = angle_z*180.0/np.pi
-
-    angle_x = 180.0 if angle_x == 0.0 else angle_x
-    angle_y = 180.0 if angle_y == 0.0 else angle_y
-    angle_z = 180.0 if angle_z == 0.0 else angle_z
-
-    # angle_x = angle_x + 360 if angle_x < 0 else angle_x
-    # angle_y = angle_y + 360 if angle_y < 0 else angle_y
-    # angle_z = angle_z + 360 if angle_z < 0 else angle_z
+    angle_x = np.arccos(cos_angle_x) * 180.0 / np.pi
+    angle_y = np.arccos(cos_angle_y) * 180.0 / np.pi
+    angle_z = np.arccos(cos_angle_z) * 180.0 / np.pi
 
     # 결과 반환
     return (round(angle_x, 4), round(angle_y, 4), round(angle_z, 4))  # 각 축에 대해 소수점 네 자리까지 반올림
-
 
 
 # MediaPipe pose 모듈 초기화
@@ -167,6 +188,8 @@ with open('Animation/my.bvh', 'a', encoding='utf-8') as file:
     # 각 프레임에 대한 데이터를 파일에 기록합니다.
     for frameNum in range(len(df)):
         frameAni = ""
+        print('next frame')        
+
         for joint in joints:
             if joint == 'Hips':
                 hips_coordinates = df['Hips'].iloc[frameNum]  # (x, y, z) 형태의 튜플
@@ -176,11 +199,38 @@ with open('Animation/my.bvh', 'a', encoding='utf-8') as file:
                 frameAni += "{} {} {} ".format(*rounded_hips_coordinates)
             if joint in df_angles.columns:
                 joint_angles = df_angles[joint].iloc[frameNum]
-                joint_angles_xyz = (joint_angles[1], joint_angles[2], joint_angles[0]) # x,y,z => y, x, z 로 정정
+                joint_angles = list(joint_angles)
+
+                if frameNum != 0: #TODO수정......
+                    pre_angle_x = df_angles[joint].iloc[frameNum - 1] #if joint_angles[0] != 0 or np.isnan(joint_angles[0])  else joint_angles[0]             
+                    pre_angle_y = df_angles[joint].iloc[frameNum - 1] #if joint_angles[1] != 0 or np.isnan(joint_angles[1])  else joint_angles[1]             
+                    pre_angle_z = df_angles[joint].iloc[frameNum - 1] #if joint_angles[2] != 0 or np.isnan(joint_angles[2])  else joint_angles[2]               
+                else :
+                    pre_angle_x = 0 
+                    pre_angle_y = 0
+                    pre_angle_z = 0
+
+                joint_angles[0] = pre_angle_x if joint_angles[0] == 0 or np.isnan(joint_angles[0])  else joint_angles[0]
+                joint_angles[1] = pre_angle_y if joint_angles[1] == 0 or np.isnan(joint_angles[1])  else joint_angles[1] 
+                joint_angles[2] = pre_angle_z if joint_angles[2] == 0 or np.isnan(joint_angles[2])  else joint_angles[2] 
+
+                df_angles[joint].iloc[frameNum] = joint_angles[0]
+                df_angles[joint].iloc[frameNum] = joint_angles[1]
+                df_angles[joint].iloc[frameNum] = joint_angles[2]
+
+                print(pre_angle_x,pre_angle_y,pre_angle_z)
+                print("bb ", joint_angles)
+
+                joint_angles_xyz = (joint_angles[1], joint_angles[0], joint_angles[2]) # x,y,z => y, x, z 로 정정
                 frameAni += "{} {} {} ".format(*joint_angles_xyz)
+                
+                pre_angle_x = joint_angles[0]
+                pre_angle_y = joint_angles[1]
+                pre_angle_z = joint_angles[2]
+
             else:
                 # 일치하는 관절이 없는 경우 "0.0000 0.0000 0.0000"을 추가합니다.
                 frameAni += "0.0000 0.0000 0.0000 "
-        
+
         file.write(frameAni.strip() + '\n')
 
